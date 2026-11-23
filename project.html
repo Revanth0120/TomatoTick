@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TomatoTick: a Pomodoro focus timer with shared study rooms, stats and synthesized chimes.">
+  <title>TomatoTick | Pomodoro Focus Rooms</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<style>
+    /* ===== TomatoTick styles ===== */
+:root {
+  --bg: #fff4ee; --bg2: #ffe3d6; --card: #ffffffcc; --ink: #2b1d1a; --muted: #7a6560;
+  --line: #00000014; --shadow: 0 20px 50px -20px #b3202a44;
+  --accent: #e5484d; --accent-2: #ff8a5c; --good: #2f9e6b;
+  --radius: 22px;
+}
+body[data-theme="forest"] { --bg: #effaf3; --bg2: #d7f0e0; --ink: #16291f; --muted: #587063; --shadow: 0 20px 50px -20px #2f9e6b55; }
+body[data-theme="night"]  { --bg: #12141f; --bg2: #1c2036; --card: #1f2438cc; --ink: #eef0ff; --muted: #9aa0c3; --line: #ffffff1a; --shadow: 0 20px 50px -20px #000a; }
+body[data-mode="focus"] { --accent: #e5484d; --accent-2: #ff8a5c; }
+body[data-mode="short"] { --accent: #2f9e6b; --accent-2: #7ed6a5; }
+body[data-mode="long"]  { --accent: #3b82c4; --accent-2: #86c0f0; }
+
+* { box-sizing: border-box; margin: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--ink); background: linear-gradient(160deg, var(--bg), var(--bg2)) fixed;
+  line-height: 1.55; min-height: 100vh; overflow-x: hidden;
+  transition: background .6s, color .4s;
+}
+img, svg { max-width: 100%; height: auto; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+kbd { background: var(--line); padding: 1px 7px; border-radius: 6px; font-size: .85em; }
+
+/* animated background blobs */
+.bg-blobs { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.bg-blobs span { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .45; animation: drift 18s ease-in-out infinite alternate; transition: background 1s; }
+.bg-blobs span:nth-child(1) { width: 420px; height: 420px; background: var(--accent); top: -120px; left: -100px; }
+.bg-blobs span:nth-child(2) { width: 360px; height: 360px; background: var(--accent-2); bottom: -120px; right: -80px; animation-delay: -6s; }
+.bg-blobs span:nth-child(3) { width: 260px; height: 260px; background: var(--good); top: 45%; left: 55%; opacity: .22; animation-delay: -11s; }
+@keyframes drift { to { transform: translate(60px, 40px) scale(1.15); } }
+
+/* header */
+.site-header {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px clamp(16px, 5vw, 56px);
+  backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 70%, transparent); border-bottom: 1px solid var(--line);
+}
+.logo { font-weight: 800; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; }
+.logo-dot { display: inline-block; animation: wobble 3s ease-in-out infinite; }
+@keyframes wobble { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(10deg) scale(1.1); } }
+.nav { display: flex; gap: 22px; }
+.nav a { color: var(--muted); font-weight: 600; position: relative; padding: 4px 0; }
+.nav a::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--accent); transition: width .3s; }
+.nav a:hover { color: var(--ink); } .nav a:hover::after { width: 100%; }
+.themes { display: flex; gap: 8px; }
+.theme-btn { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); transition: transform .2s; }
+.theme-btn:hover { transform: scale(1.2); }
+.theme-btn[data-theme-set="tomato"] { background: linear-gradient(135deg, #e5484d, #ffb199); }
+.theme-btn[data-theme-set="forest"] { background: linear-gradient(135deg, #2f9e6b, #bdeccd); }
+.theme-btn[data-theme-set="night"]  { background: linear-gradient(135deg, #1c2036, #5a63a8); }
+
+/* buttons */
+.btn { border: 0; border-radius: 999px; padding: 12px 24px; font-weight: 700; transition: transform .2s, box-shadow .2s, background .3s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 10px 24px -10px var(--accent); }
+.btn.primary:hover { transform: translateY(-3px); box-shadow: 0 16px 28px -10px var(--accent); }
+.btn.primary:active { transform: translateY(0) scale(.97); }
+.btn.ghost { background: var(--card); border: 1px solid var(--line); }
+.btn.ghost:hover { transform: translateY(-2px); border-color: var(--accent); }
+.btn.big { padding: 14px 40px; font-size: 1.1rem; min-width: 150px; }
+.chip { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: .88rem; font-weight: 600; transition: all .2s; }
+.chip:hover { transform: translateY(-2px); border-color: var(--accent); }
+.chip.on { background: var(--accent); color: #fff; border-color: transparent; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } 50% { box-shadow: 0 0 0 8px transparent; } }
+.pill { display: inline-block; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); font-weight: 700; font-size: .82rem; padding: 6px 14px; border-radius: 999px; }
+
+/* hero */
+.hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: clamp(24px, 6vw, 80px); padding: clamp(40px, 8vw, 100px) clamp(16px, 5vw, 56px); max-width: 1200px; margin: 0 auto; }
+.hero-text { flex: 1 1 380px; max-width: 560px; }
+.hero h1 { font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 1.05; margin: 18px 0; letter-spacing: -1.5px; }
+.grad { background: linear-gradient(120deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p { color: var(--muted); font-size: 1.1rem; }
+.hero-cta { display: flex; gap: 14px; flex-wrap: wrap; margin: 28px 0; }
+.hero-stats { list-style: none; padding: 0; display: flex; gap: 32px; flex-wrap: wrap; }
+.hero-stats strong { display: block; font-size: 1.6rem; }
+.hero-stats span { color: var(--muted); font-size: .85rem; }
+.hero-art { flex: 1 1 300px; max-width: 440px; position: relative; display: flex; justify-content: center; }
+.tomato-img { width: 100%; max-width: 420px; animation: bob 5s ease-in-out infinite; filter: drop-shadow(0 30px 30px #b3202a55); }
+@keyframes bob { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-18px) rotate(3deg); } }
+.float { position: absolute; font-size: 2rem; background: var(--card); border-radius: 18px; padding: 10px 14px; box-shadow: var(--shadow); animation: bob 4s ease-in-out infinite; }
+.f1 { top: 6%; left: 0; } .f2 { top: 20%; right: -2%; animation-delay: -1.3s; } .f3 { bottom: 14%; left: 4%; animation-delay: -2.4s; }
+.mini-ring { position: absolute; bottom: 0; right: 4%; width: 110px; height: 110px; background: var(--card); border-radius: 50%; display: grid; place-items: center; box-shadow: var(--shadow); }
+.mini-ring svg { position: absolute; inset: 6px; width: calc(100% - 12px); transform: rotate(-90deg); }
+.mr-bg { fill: none; stroke: var(--line); stroke-width: 8; }
+.mr-fg { fill: none; stroke: var(--accent); stroke-width: 8; stroke-linecap: round; stroke-dasharray: 264; animation: drain 6s linear infinite; }
+@keyframes drain { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 264; } }
+.mini-ring b { font-size: 1.05rem; }
+
+/* sections & cards (Flexbox) */
+.section { max-width: 1200px; margin: 0 auto; padding: clamp(40px, 7vw, 90px) clamp(16px, 5vw, 56px); }
+.section-head { text-align: center; max-width: 640px; margin: 0 auto 40px; }
+.section-head h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 14px 0 8px; letter-spacing: -.5px; }
+.section-head p { color: var(--muted); }
+.cards { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+.card { flex: 1 1 230px; max-width: 280px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; backdrop-filter: blur(8px); transition: transform .3s, box-shadow .3s; }
+.card:hover { transform: translateY(-8px) rotate(-.6deg); box-shadow: var(--shadow); }
+.card h3 { margin: 10px 0 6px; } .card p { color: var(--muted); font-size: .95rem; }
+.num { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.feat i { font-style: normal; font-size: 2rem; display: inline-block; transition: transform .4s; }
+.feat:hover i { transform: scale(1.3) rotate(12deg); }
+
+/* scroll reveal */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity .8s ease var(--d, 0s), transform .8s ease var(--d, 0s); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* app layout */
+.app-grid { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; justify-content: center; }
+.timer-card { flex: 1 1 420px; max-width: 560px; background: var(--card); border: 1px solid var(--line); border-radius: 32px; padding: clamp(20px, 4vw, 36px); box-shadow: var(--shadow); backdrop-filter: blur(12px); display: flex; flex-direction: column; align-items: center; gap: 18px; position: relative; overflow: hidden; transition: box-shadow .5s; }
+.timer-card.celebrate { animation: glow 2.6s ease-out; }
+@keyframes glow { 0% { box-shadow: 0 0 0 0 #2f9e6b99; } 20% { box-shadow: 0 0 80px 18px #2f9e6baa, inset 0 0 60px #2f9e6b44; border-color: #2f9e6b; } 100% { box-shadow: var(--shadow); } }
+.tabs { display: flex; gap: 6px; background: var(--line); padding: 5px; border-radius: 999px; flex-wrap: wrap; justify-content: center; }
+.tab { border: 0; background: transparent; padding: 8px 18px; border-radius: 999px; font-weight: 700; color: var(--muted); transition: all .3s; }
+.tab.active { background: var(--accent); color: #fff; box-shadow: 0 6px 14px -6px var(--accent); }
+
+.ring-wrap { position: relative; width: min(300px, 78vw); aspect-ratio: 1; }
+.ring { width: 100%; transform: rotate(-90deg); overflow: visible; }
+.ring-bg { fill: none; stroke: var(--line); stroke-width: 14; }
+.ring-fg { fill: none; stroke: url(#ringGrad); stroke-width: 14; stroke-linecap: round; stroke-dasharray: 753.98; stroke-dashoffset: 0; transition: stroke-dashoffset .25s linear; filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.timer-card.running .ring-fg { animation: ringGlow 2s ease-in-out infinite; }
+@keyframes ringGlow { 50% { filter: drop-shadow(0 0 18px var(--accent)); } }
+.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.digits { font-size: clamp(3rem, 14vw, 4.6rem); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -2px; }
+.timer-card.running .digits { animation: breathe 2s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.04); } }
+.mode-label { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 2px; font-size: .8rem; }
+
+.dots { display: flex; gap: 10px; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line); transition: all .4s; }
+.dots i.done { background: var(--good); transform: scale(1.2); box-shadow: 0 0 12px var(--good); }
+.task-input { width: 100%; max-width: 380px; padding: 12px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; text-align: center; transition: border-color .3s, box-shadow .3s; }
+.task-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.tools, .ambient { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.amb-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.vol { display: flex; align-items: center; gap: 6px; font-size: .9rem; }
+.vol input { width: 100px; accent-color: var(--accent); }
+.vol.small input { width: 80px; }
+
+/* confetti */
+.confetti { position: absolute; top: 40%; width: 9px; height: 14px; border-radius: 2px; pointer-events: none; animation: fall 1.8s ease-out forwards; }
+@keyframes fall { to { transform: translate(var(--x), 260px) rotate(720deg); opacity: 0; } }
+
+/* rooms */
+.rooms-card { flex: 1 1 320px; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 28px; padding: 24px; backdrop-filter: blur(12px); box-shadow: var(--shadow); }
+.rooms-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.live { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.live i { width: 9px; height: 9px; border-radius: 50%; background: var(--good); animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: .25; transform: scale(.7); } }
+.room-list { display: flex; flex-direction: column; gap: 10px; }
+.room { text-align: left; border: 1px solid var(--line); background: transparent; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 8px; transition: all .25s; }
+.room:hover { transform: translateX(4px); border-color: var(--accent); }
+.room.joined { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.room-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.room-name { font-weight: 800; } .room-blurb { font-size: .82rem; color: var(--muted); }
+.room-status { font-size: .78rem; color: var(--good); font-weight: 700; }
+.avatars { display: flex; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--c, #e5484d); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: .78rem; border: 2px solid var(--bg); margin-left: -8px; flex: none; }
+.avatars .avatar:first-child { margin-left: 0; }
+.avatar.more { background: var(--line); color: var(--muted); }
+.room-view { margin-top: 16px; animation: slideIn .4s ease; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(12px); } }
+.rv-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.members { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow: auto; }
+.member { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: var(--line); font-size: .9rem; animation: slideIn .4s ease backwards; }
+.member .avatar { margin: 0; border-color: transparent; position: relative; }
+.member.focusing .avatar { animation: ringPulse 2s infinite; }
+@keyframes ringPulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+.m-info { flex: 1; min-width: 0; } .m-info b { display: block; } .m-info span { display: block; color: var(--muted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #2f9e6b22; color: var(--good); }
+.badge.brk { background: #3b82c422; color: #3b82c4; } .badge.idle { background: var(--line); color: var(--muted); }
+.member.you { outline: 2px solid var(--accent); }
+
+/* stats drawer */
+.stats-wrap { max-width: 1000px; margin: 34px auto 0; text-align: center; }
+.stats-drawer { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s ease; text-align: left; }
+.stats-drawer.open { grid-template-rows: 1fr; }
+.stats-inner { overflow: hidden; min-height: 0; }
+.stats-drawer.open .stats-inner { padding-top: 22px; }
+.stat-tiles { display: flex; flex-wrap: wrap; gap: 16px; }
+.tile { flex: 1 1 180px; background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; text-align: center; }
+.tile-n { display: block; font-size: 2.4rem; font-weight: 800; color: var(--accent); }
+.tile-n.bump, .bump { animation: bump .5s; }
+@keyframes bump { 50% { transform: scale(1.25); } }
+.tile-l { color: var(--muted); font-size: .85rem; font-weight: 600; }
+.target { margin: 20px 0; } .target-row { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 6px; }
+.bar { height: 14px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.bar-fill { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--good)); transition: width .8s cubic-bezier(.2,.8,.2,1); }
+.stats-cols { display: flex; flex-wrap: wrap; gap: 28px; }
+.stats-cols > div { flex: 1 1 280px; } .stats-cols h4 { margin-bottom: 10px; }
+.heatmap { display: grid; grid-template-rows: repeat(7, 22px); grid-auto-flow: column; grid-auto-columns: 22px; gap: 5px; }
+.heatmap i { border-radius: 6px; background: var(--line); animation: pop .4s backwards; cursor: help; }
+@keyframes pop { from { transform: scale(0); } }
+.h1 { background: #e5484d33 !important; } .h2 { background: #e5484d77 !important; } .h3 { background: #e5484dbb !important; } .h4 { background: #e5484d !important; }
+.legend { display: flex; align-items: center; gap: 5px; font-size: .75rem; color: var(--muted); margin-top: 10px; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; background: var(--line); }
+.goals { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.goals li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 9px 14px; display: flex; gap: 10px; align-items: center; animation: slideIn .4s; }
+.goals li.empty { color: var(--muted); font-size: .9rem; }
+.goals li.done span { text-decoration: line-through; color: var(--muted); }
+
+/* toasts & dialog */
+.toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 10px; align-items: center; width: min(92vw, 420px); }
+.toast { background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 16px; box-shadow: 0 14px 30px #0006; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; animation: toastIn .45s cubic-bezier(.2,1.4,.4,1); font-weight: 600; }
+.toast.out { opacity: 0; transform: translateY(14px); transition: all .4s; }
+.toast button { border: 0; border-radius: 999px; padding: 5px 14px; font-weight: 700; background: var(--accent); color: #fff; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(30px) scale(.9); } }
+.dialog { border: 0; border-radius: 26px; padding: 28px; background: var(--bg); color: var(--ink); width: min(92vw, 440px); box-shadow: 0 30px 80px #0008; }
+.dialog::backdrop { background: #0007; backdrop-filter: blur(4px); }
+.dialog[open] { animation: toastIn .4s; }
+.dialog h3 { margin-bottom: 16px; }
+.field-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.field-grid label { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 600; }
+.field-grid input { padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; }
+.check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.site-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 28px clamp(16px, 5vw, 56px); color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line); }
+.exit-focus { display: none; }
+
+/* deep focus mode */
+body.focus-mode .site-header, body.focus-mode .hero, body.focus-mode #technique, body.focus-mode #features,
+body.focus-mode .section-head, body.focus-mode .rooms-card, body.focus-mode .stats-wrap, body.focus-mode .site-footer,
+body.focus-mode .tools, body.focus-mode .task-input, body.focus-mode .tabs { display: none; }
+body.focus-mode .app-section { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0; }
+body.focus-mode .timer-card { background: transparent; border: 0; box-shadow: none; backdrop-filter: none; max-width: none; }
+body.focus-mode .ring-wrap { width: min(70vh, 86vw); }
+body.focus-mode .digits { font-size: clamp(4rem, 18vh, 9rem); }
+body.focus-mode .exit-focus { display: block; position: fixed; top: 16px; right: 16px; z-index: 30; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 8px 16px; font-size: .8rem; opacity: .6; transition: opacity .3s; }
+body.focus-mode .exit-focus:hover { opacity: 1; }
+
+@media (max-width: 640px) {
+  .nav { display: none; }
+  .hero-art { order: -1; max-width: 280px; }
+  .float { display: none; }
+  .btn.big { width: 100%; }
+  .heatmap { grid-template-rows: repeat(7, 18px); grid-auto-columns: 18px; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+<body data-theme="tomato" data-mode="focus">
+  <div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <!-- ============ HEADER ============ -->
+  <header class="site-header">
+    <a class="logo" href="#top" aria-label="TomatoTick home"><span class="logo-dot">🍅</span> TomatoTick</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#technique">Technique</a>
+      <a href="#features">Features</a>
+      <a href="#app">Focus Room</a>
+    </nav>
+    <div class="themes" role="group" aria-label="Theme">
+      <button class="theme-btn" data-theme-set="tomato" title="Tomato" aria-label="Tomato theme"></button>
+      <button class="theme-btn" data-theme-set="forest" title="Forest" aria-label="Forest theme"></button>
+      <button class="theme-btn" data-theme-set="night" title="Night" aria-label="Night theme"></button>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="hero-text reveal">
+        <span class="pill">25 minutes. Zero distractions.</span>
+        <h1>Focus together.<br><span class="grad">Tick by tick.</span></h1>
+        <p>TomatoTick pairs the proven Pomodoro technique with shared study rooms, so your focus has company and accountability. Calm timer, soft chimes, honest stats.</p>
+        <div class="hero-cta">
+          <a class="btn primary" href="#app">Start focusing</a>
+          <a class="btn ghost" href="#technique">How it works</a>
+        </div>
+        <ul class="hero-stats">
+          <li><strong>18</strong><span>students focusing</span></li>
+          <li><strong>3</strong><span>live rooms</span></li>
+          <li><strong>25:00</strong><span>per sprint</span></li>
+        </ul>
+      </div>
+
+      <div class="hero-art reveal" style="--d:.15s">
+        <svg class="tomato-img" viewBox="0 0 400 400" role="img" aria-label="A ripe tomato">
+          <defs>
+            <radialGradient id="tg" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#ff8a80"/><stop offset=".55" stop-color="#e5484d"/><stop offset="1" stop-color="#b3202a"/></radialGradient>
+            <linearGradient id="tl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6ccf8e"/><stop offset="1" stop-color="#2f9e6b"/></linearGradient>
+          </defs>
+          <ellipse cx="200" cy="370" rx="120" ry="16" fill="#00000022"/>
+          <path d="M200 110c-90-30-170 30-170 130 0 80 70 130 170 130s170-50 170-130c0-100-80-160-170-130z" fill="url(#tg)"/>
+          <ellipse cx="130" cy="190" rx="36" ry="22" fill="#ffffff44" transform="rotate(-35 130 190)"/>
+          <path d="M200 120l-20-50 30 25 20-40 6 48 44-22-26 40 40 10-52 14 10 34-30-24-22 30-6-36-40 12 24-30-44-10z" fill="url(#tl)"/>
+          <path d="M200 120c0-30 6-52 22-70" stroke="#2f9e6b" stroke-width="10" stroke-linecap="round" fill="none"/>
+        </svg>
+        <div class="float f1">⏱️</div>
+        <div class="float f2">🎧</div>
+        <div class="float f3">📖</div>
+        <div class="mini-ring" aria-hidden="true">
+          <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" class="mr-bg"/><circle cx="50" cy="50" r="42" class="mr-fg"/></svg>
+          <b>24:59</b>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TECHNIQUE ============ -->
+    <section id="technique" class="section">
+      <div class="section-head reveal">
+        <span class="pill">The technique</span>
+        <h2>Four moves, endlessly repeatable</h2>
+        <p>Short sprints beat long slogs. The Pomodoro cycle keeps your brain fresh and your streak alive.</p>
+      </div>
+      <div class="cards steps">
+        <article class="card step reveal" style="--d:0s"><span class="num">1</span><h3>Pick one task</h3><p>Write a single goal for the sprint. Specific beats ambitious.</p></article>
+        <article class="card step reveal" style="--d:.1s"><span class="num">2</span><h3>Focus for 25</h3><p>Phone away, tab quiet. The ring drains while you go deep.</p></article>
+        <article class="card step reveal" style="--d:.2s"><span class="num">3</span><h3>Break for 5</h3><p>Stand up, stretch, sip water. A bell tells you when to return.</p></article>
+        <article class="card step reveal" style="--d:.3s"><span class="num">4</span><h3>Long rest after 4</h3><p>Every fourth tomato earns a 15-minute reset. Then go again.</p></article>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section id="features" class="section">
+      <div class="section-head reveal">
+        <span class="pill">Features</span>
+        <h2>Everything a focus session needs</h2>
+      </div>
+      <div class="cards feats">
+        <article class="card feat reveal"><i>⏲️</i><h3>Drift-free timer</h3><p>Counts against real timestamps, so background tabs never fall behind.</p></article>
+        <article class="card feat reveal" style="--d:.07s"><i>👥</i><h3>Shared rooms</h3><p>Study alongside peers and see what everyone is working on.</p></article>
+        <article class="card feat reveal" style="--d:.14s"><i>🔔</i><h3>Synthesized chimes</h3><p>Bell tones built with Web Audio. No files, no latency, adjustable volume.</p></article>
+        <article class="card feat reveal" style="--d:.21s"><i>📊</i><h3>Stats &amp; heatmap</h3><p>Daily pomodoros, minutes logged and a month-long focus heatmap.</p></article>
+        <article class="card feat reveal" style="--d:.28s"><i>🌧️</i><h3>Ambient sound</h3><p>White noise, gentle rain or a cafe hum, layered under your timer.</p></article>
+        <article class="card feat reveal" style="--d:.35s"><i>🔥</i><h3>Streaks</h3><p>Hit your daily target and keep the flame alive. Deep Focus mode hides the rest.</p></article>
+      </div>
+    </section>
+
+    <!-- ============ APP ============ -->
+    <section id="app" class="section app-section">
+      <div class="section-head reveal">
+        <span class="pill">Focus Room</span>
+        <h2>Your timer is ready</h2>
+        <p>Shortcuts: <kbd>Space</kbd> start/pause · <kbd>R</kbd> reset · <kbd>F</kbd> deep focus · <kbd>Esc</kbd> exit</p>
+      </div>
+
+      <div class="app-grid">
+        <!-- TIMER CARD -->
+        <div class="timer-card" id="timerCard">
+          <div class="tabs" role="tablist" aria-label="Session type">
+            <button class="tab active" data-mode="focus" role="tab">Focus</button>
+            <button class="tab" data-mode="short" role="tab">Short Break</button>
+            <button class="tab" data-mode="long" role="tab">Long Break</button>
+          </div>
+
+          <div class="ring-wrap">
+            <svg class="ring" viewBox="0 0 280 280" aria-hidden="true">
+              <defs>
+                <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="var(--accent)"/>
+                  <stop offset="1" stop-color="var(--accent-2)"/>
+                </linearGradient>
+              </defs>
+              <circle class="ring-bg" cx="140" cy="140" r="120"/>
+              <circle class="ring-fg" id="ringProgress" cx="140" cy="140" r="120"/>
+            </svg>
+            <div class="ring-center">
+              <div class="digits" id="timeDigits" role="timer" aria-live="off">25:00</div>
+              <div class="mode-label" id="modeLabel">Focus</div>
+            </div>
+          </div>
+
+          <div class="dots" id="cycleDots" aria-label="Pomodoros in this cycle"></div>
+
+          <input class="task-input" id="taskInput" type="text" maxlength="60" placeholder="What will you finish this sprint?" aria-label="Session goal">
+
+          <div class="controls">
+            <button class="btn primary big" id="startBtn">Start</button>
+            <button class="btn ghost" id="resetBtn">Reset</button>
+            <button class="btn ghost" id="skipBtn" title="Jump to the last 3 seconds (demo)">⏩ Fast-forward</button>
+          </div>
+
+          <div class="tools">
+            <button class="chip" id="chimeBtn">🔔 Test Chime</button>
+            <label class="vol">🔊 <input type="range" id="volume" min="0" max="100" value="60" aria-label="Chime volume"></label>
+            <button class="chip" id="settingsBtn">⚙️ Settings</button>
+            <button class="chip" id="focusModeBtn">⛶ Deep Focus</button>
+          </div>
+
+          <div class="ambient">
+            <span class="amb-title">Ambient</span>
+            <button class="chip amb-btn" data-kind="white">🌫️ White noise</button>
+            <button class="chip amb-btn" data-kind="rain">🌧️ Rain</button>
+            <button class="chip amb-btn" data-kind="cafe">☕ Cafe</button>
+            <label class="vol small">🎚️ <input type="range" id="ambVolume" min="0" max="100" value="50" aria-label="Ambient volume"></label>
+          </div>
+        </div>
+
+        <!-- ROOMS -->
+        <aside class="rooms-card" id="roomsCard">
+          <div class="rooms-head">
+            <h3>Study rooms</h3>
+            <span class="live"><i></i> <span id="liveCount">18</span> focusing</span>
+          </div>
+          <div class="room-list" id="roomList"></div>
+          <div class="room-view" id="roomView" hidden></div>
+        </aside>
+      </div>
+
+      <!-- STATS DRAWER -->
+      <div class="stats-wrap" id="statsWrap">
+        <button class="btn ghost stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsDrawer">📊 Show today's stats</button>
+        <div class="stats-drawer" id="statsDrawer">
+          <div class="stats-inner">
+            <div class="stat-tiles">
+              <div class="tile"><span class="tile-n" id="statPomos">0</span><span class="tile-l">Pomodoros today</span></div>
+              <div class="tile"><span class="tile-n" id="statMinutes">0</span><span class="tile-l">Deep-work minutes</span></div>
+              <div class="tile"><span class="tile-n"><span id="statStreak">0</span> 🔥</span><span class="tile-l">Day streak</span></div>
+            </div>
+            <div class="target">
+              <div class="target-row"><span>Daily target</span><span id="targetText">0 / 4</span></div>
+              <div class="bar"><div class="bar-fill" id="targetBar"></div></div>
+            </div>
+            <div class="stats-cols">
+              <div>
+                <h4>Focus heatmap · last 5 weeks</h4>
+                <div class="heatmap" id="heatmap" aria-label="Daily focus heatmap"></div>
+                <div class="legend"><span>Less</span><i class="h0"></i><i class="h1"></i><i class="h2"></i><i class="h3"></i><i class="h4"></i><span>More</span></div>
+              </div>
+              <div>
+                <h4>Today's goals</h4>
+                <ul class="goals" id="goalList"><li class="empty">Finish a sprint with a goal and it appears here.</li></ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>🍅 TomatoTick · Focus in good company</span>
+    <span>Built with HTML, CSS &amp; JavaScript</span>
+  </footer>
+
+  <button class="exit-focus" id="exitFocus">Exit Deep Focus (Esc)</button>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- SETTINGS -->
+  <dialog id="settingsDialog" class="dialog">
+    <form method="dialog" id="settingsForm">
+      <h3>Timer settings</h3>
+      <div class="field-grid">
+        <label>Focus (min)<input type="number" name="focus" min="1" max="120" required></label>
+        <label>Short break (min)<input type="number" name="short" min="1" max="60" required></label>
+        <label>Long break (min)<input type="number" name="long" min="1" max="90" required></label>
+        <label>Daily target (pomodoros)<input type="number" name="target" min="1" max="16" required></label>
+      </div>
+      <label class="check"><input type="checkbox" name="auto"> Auto-start the next session</label>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="save" id="saveSettings">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    /* ===== TomatoTick app logic ===== */
+(() => {
+  'use strict';
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const KEY = 'tomatotick.v1';
+  const DEFAULTS = { focus: 25, short: 5, long: 15, target: 4, auto: true, volume: 0.6, ambient: 0.5, theme: 'tomato' };
+  const LABELS = { focus: 'Focus', short: 'Short Break', long: 'Long Break' };
+  const CIRC = 2 * Math.PI * 120;
+  const SEED = [3,5,4,0,2,6,4,4,5,1,0,3,7,4,5,4,2,0,4,6,5,4,3,4,5,4,4]; // sample daily logs (oldest -> yesterday)
+  const COLORS = ['#e5484d','#f08c00','#2f9e6b','#3b82c4','#8e5bd6','#d6336c','#0c8599','#5c7cfa'];
+
+  // Registry of 3 focus rooms, 18 students (embedded so the project is just 3 files)
+  const ROOMS_FALLBACK = [
+    { id: 'library', name: 'Silent Library Room', emoji: '📚', blurb: 'Quiet, no chat. Just deep reading and notes.', members: [
+      ['Aarav','Organic chemistry notes'],['Meera','Thesis chapter 3'],['Sofia','Calculus problem set'],['Kenji','Reading: Thinking, Fast and Slow'],['Priya','Flashcards revision'],['Liam','Essay outline']] },
+    { id: 'coders', name: 'Late Night Coders', emoji: '🌙', blurb: 'Bugs, builds and side projects after dark.', members: [
+      ['Rohan','Fix API pagination bug'],['Zara','Graph problems practice'],['Noah','React component library'],['Ananya','Write unit tests'],['Diego','CSS animation polish'],['Mei','SQL joins practice'],['Omar','Refactor auth module']] },
+    { id: 'morning', name: 'Morning Prep Club', emoji: '☀️', blurb: 'Early birds prepping for exams and interviews.', members: [
+      ['Isha','GRE vocabulary'],['Lucas','Math mock test'],['Fatima','History chapter summary'],['Arjun','Physics revision'],['Chloe','Spanish practice']] }
+  ].map(r => ({ ...r, members: r.members.map(([name, task]) => ({ name, task })) }));
+
+  /* ---------- storage ---------- */
+  const dayKey = (d = new Date()) => d.toLocaleDateString('en-CA');
+  function load() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(KEY)); } catch {}
+    const store = { settings: { ...DEFAULTS, ...(s && s.settings) }, days: (s && s.days) || {}, goals: (s && s.goals) || {} };
+    if (!s) { // seed sample focus logs
+      SEED.forEach((v, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (SEED.length - i));
+        store.days[dayKey(d)] = { pomodoros: v, minutes: v * 25 };
+      });
+    }
+    return store;
+  }
+  const store = load();
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {} };
+  const today = () => (store.days[dayKey()] ||= { pomodoros: 0, minutes: 0 });
+
+  /* ---------- timer state ---------- */
+  const S = { mode: 'focus', total: 0, remaining: 0, running: false, endAt: 0, cycle: 0, room: null, timer: null };
+  const el = {
+    card: $('#timerCard'), digits: $('#timeDigits'), ring: $('#ringProgress'), label: $('#modeLabel'),
+    start: $('#startBtn'), reset: $('#resetBtn'), skip: $('#skipBtn'), task: $('#taskInput'), dots: $('#cycleDots'),
+  };
+  el.ring.style.strokeDasharray = CIRC;
+
+  const minutes = m => store.settings[m] * 60000;
+  const pad = n => String(n).padStart(2, '0');
+
+  function setMode(mode, autostart = false) {
+    stop();
+    S.mode = mode; S.total = S.remaining = minutes(mode);
+    document.body.dataset.mode = mode;
+    $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+    el.label.textContent = LABELS[mode];
+    render(); renderRoom();
+    if (autostart) start();
+  }
+
+  function render() {
+    const secs = Math.ceil(S.remaining / 1000);
+    const text = `${pad(Math.floor(secs / 60))}:${pad(secs % 60)}`;
+    el.digits.textContent = text;
+    el.ring.style.strokeDashoffset = CIRC * (1 - S.remaining / S.total);
+    document.title = S.running || S.remaining < S.total ? `(${text}) ${LABELS[S.mode]} | TomatoTick` : 'TomatoTick | Pomodoro Focus Rooms';
+    el.start.textContent = S.running ? 'Pause' : (S.remaining < S.total ? 'Resume' : 'Start');
+    el.card.classList.toggle('running', S.running);
+  }
+
+  function start() {
+    audio(); // unlock AudioContext on first user gesture
+    if (S.running) return;
+    S.running = true;
+    S.endAt = performance.now() + S.remaining; // target timestamp, so no drift in background tabs
+    S.timer = setInterval(tick, 100);
+    render(); renderRoom();
+  }
+  function stop() { S.running = false; clearInterval(S.timer); render(); }
+  function pause() { if (S.running) { tick(); stop(); renderRoom(); } }
+  function tick() {
+    S.remaining = Math.max(0, S.endAt - performance.now());
+    render();
+    if (S.remaining <= 0) complete();
+  }
+  function reset() { stop(); S.remaining = S.total; render(); renderRoom(); }
+
+  function complete() {
+    stop();
+    S.remaining = 0; render();
+    let next;
+    if (S.mode === 'focus') {
+      const t = today(); t.pomodoros++; t.minutes += store.settings.focus; save();
+      S.cycle++;
+      chime('done'); celebrate(); renderDots(); renderStats(true);
+      askGoal();
+      next = S.cycle % 4 === 0 ? 'long' : 'short';
+      toast(next === 'long' ? '🎉 Four tomatoes! Take a long break.' : '🍅 Pomodoro complete. Short break time.');
+    } else {
+      chime('back');
+      toast('⏰ Break over. Ready for the next sprint?');
+      next = 'focus';
+    }
+    setTimeout(() => setMode(next, store.settings.auto), 1400);
+  }
+
+  function renderDots() {
+    const filled = S.cycle % 4 === 0 && S.cycle > 0 && S.mode !== 'focus' ? 4 : S.cycle % 4;
+    el.dots.innerHTML = [0, 1, 2, 3].map(i => `<i class="${i < filled ? 'done' : ''}"></i>`).join('');
+  }
+
+  function celebrate() {
+    el.card.classList.remove('celebrate'); void el.card.offsetWidth; el.card.classList.add('celebrate');
+    for (let i = 0; i < 28; i++) {
+      const c = document.createElement('span');
+      c.className = 'confetti';
+      c.style.left = 20 + Math.random() * 60 + '%';
+      c.style.background = COLORS[i % COLORS.length];
+      c.style.setProperty('--x', (Math.random() * 160 - 80) + 'px');
+      c.style.animationDelay = Math.random() * .3 + 's';
+      el.card.appendChild(c);
+      setTimeout(() => c.remove(), 2400);
+    }
+  }
+
+  /* ---------- goals ---------- */
+  function askGoal() {
+    const text = el.task.value.trim();
+    if (!text) return;
+    const list = (store.goals[dayKey()] ||= []);
+    const goal = { t: text, done: false };
+    list.push(goal); save(); renderGoals();
+    toast(`Finished “${text}”?`, [
+      ['Yes ✓', () => { goal.done = true; el.task.value = ''; save(); renderGoals(); }],
+      ['Not yet', () => {}],
+    ], 9000);
+  }
+  function renderGoals() {
+    const list = store.goals[dayKey()] || [];
+    $('#goalList').innerHTML = list.length
+      ? list.map(g => `<li class="${g.done ? 'done' : ''}">${g.done ? '✅' : '⬜'} <span></span></li>`).join('')
+      : '<li class="empty">Finish a sprint with a goal and it appears here.</li>';
+    $$('#goalList li:not(.empty) span').forEach((s, i) => (s.textContent = list[i].t));
+  }
+
+  /* ---------- toast ---------- */
+  function toast(msg, actions = [], ms = 4200) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
+    const close = () => { t.classList.add('out'); setTimeout(() => t.remove(), 400); };
+    actions.forEach(([label, fn]) => {
+      const b = document.createElement('button'); b.textContent = label;
+      b.onclick = () => { fn(); close(); }; t.appendChild(b);
+    });
+    $('#toasts').appendChild(t);
+    setTimeout(close, ms);
+  }
+
+  /* ---------- Web Audio ---------- */
+  let ctx, master, ambBus;
+  function audio() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = store.settings.volume; master.connect(ctx.destination);
+      ambBus = ctx.createGain(); ambBus.gain.value = store.settings.ambient; ambBus.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function bell(freq, t0, dur = 2, gain = 0.45) {
+    // inharmonic partials give a bell-like timbre
+    [[1, 1], [2.01, .45], [2.76, .3], [5.4, .12]].forEach(([m, g]) => {
+      const o = ctx.createOscillator(), e = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = freq * m;
+      e.gain.setValueAtTime(0.0001, t0);
+      e.gain.exponentialRampToValueAtTime(gain * g, t0 + 0.012);
+      e.gain.exponentialRampToValueAtTime(0.0001, t0 + dur / Math.pow(m, 0.35));
+      o.connect(e).connect(master); o.start(t0); o.stop(t0 + dur + 0.1);
+    });
+  }
+  function chime(kind = 'done') {
+    if (!audio()) return;
+    const t = ctx.currentTime + 0.03;
+    if (kind === 'done') { bell(659.25, t); bell(880, t + 0.38, 2.4); }          // two-tone rising
+    else { bell(880, t); bell(659.25, t + 0.32); bell(523.25, t + 0.64, 2.6); }    // gentle descending
+  }
+
+  const amb = {};
+  function noiseBuffer(brown) {
+    const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      if (brown) { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w;
+    }
+    return buf;
+  }
+  function filt(type, f, q = 0.7) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+  function startAmbient(kind) {
+    audio(); if (!ctx || amb[kind]) return;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuffer(kind === 'cafe'); src.loop = true;
+    const g = ctx.createGain(); g.gain.value = 0;
+    const extras = [];
+    if (kind === 'white') { src.connect(filt('lowpass', 5200)).connect(g); }
+    else if (kind === 'rain') { src.connect(filt('highpass', 900)).connect(filt('lowpass', 8000)).connect(g); }
+    else { // cafe: warm murmur with slow swelling chatter
+      const mod = ctx.createGain(); mod.gain.value = 0.75;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.27;
+      const depth = ctx.createGain(); depth.gain.value = 0.25;
+      lfo.connect(depth).connect(mod.gain); lfo.start(); extras.push(lfo);
+      src.connect(filt('bandpass', 420, 0.5)).connect(mod).connect(g);
+    }
+    g.connect(ambBus); src.start();
+    const level = { white: 0.14, rain: 0.28, cafe: 0.9 }[kind];
+    g.gain.setTargetAtTime(level, ctx.currentTime, 0.6);
+    amb[kind] = { src, g, extras };
+  }
+  function stopAmbient(kind) {
+    const a = amb[kind]; if (!a) return;
+    a.g.gain.setTargetAtTime(0, ctx.currentTime, 0.25);
+    setTimeout(() => { a.src.stop(); a.extras.forEach(x => x.stop()); }, 900);
+    delete amb[kind];
+  }
+
+  /* ---------- stats ---------- */
+  function tween(node, to) {
+    const from = +node.dataset.v || 0; node.dataset.v = to;
+    const t0 = performance.now();
+    const step = n => { const p = Math.min(1, (n - t0) / 600); node.textContent = Math.round(from + (to - from) * p); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+  function streak() {
+    const target = store.settings.target; let n = 0; const d = new Date();
+    if ((store.days[dayKey(d)]?.pomodoros || 0) >= target) n = 1;
+    d.setDate(d.getDate() - 1);
+    while ((store.days[dayKey(d)]?.pomodoros || 0) >= target) { n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+  function renderStats(bump = false) {
+    const t = today(), target = store.settings.target;
+    tween($('#statPomos'), t.pomodoros); tween($('#statMinutes'), t.minutes); tween($('#statStreak'), streak());
+    $('#targetText').textContent = `${t.pomodoros} / ${target}`;
+    $('#targetBar').style.width = Math.min(100, t.pomodoros / target * 100) + '%';
+    if (bump) { const n = $('#statPomos'); n.classList.remove('bump'); void n.offsetWidth; n.classList.add('bump'); }
+    // heatmap: last 5 weeks, aligned to weekday rows
+    const first = new Date(); first.setDate(first.getDate() - 34);
+    let html = '<i style="visibility:hidden"></i>'.repeat(first.getDay());
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(first); d.setDate(first.getDate() + i);
+      const v = store.days[dayKey(d)]?.pomodoros || 0;
+      const lvl = v === 0 ? 0 : v <= 2 ? 1 : v <= 4 ? 2 : v <= 6 ? 3 : 4;
+      html += `<i class="h${lvl}" style="animation-delay:${i * 15}ms" title="${d.toDateString()}: ${v} pomodoros"></i>`;
+    }
+    $('#heatmap').innerHTML = html;
+    renderGoals();
+  }
+
+  /* ---------- rooms ---------- */
+  let rooms = [];
+  const colorFor = name => COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+  const avatar = (name, extra = '') => `<span class="avatar" style="--c:${colorFor(name)}" ${extra}>${name[0]}</span>`;
+
+  function initRooms(list) {
+    rooms = list.map(r => ({ ...r, members: r.members.map(m => ({ ...m, focusing: Math.random() > 0.2 })) }));
+    renderRooms();
+    setInterval(() => { // simulate peers drifting between focus and break
+      rooms.forEach(r => { const m = r.members[Math.floor(Math.random() * r.members.length)]; m.focusing = !m.focusing; });
+      renderRooms();
+    }, 6000);
+  }
+  function renderRooms() {
+    const total = rooms.reduce((a, r) => a + r.members.length, 0) + (S.room ? 1 : 0);
+    $('#liveCount').textContent = total;
+    $('#roomList').innerHTML = rooms.map(r => {
+      const foc = r.members.filter(m => m.focusing).length;
+      const n = r.members.length + (S.room === r.id ? 1 : 0);
+      return `<button class="room ${S.room === r.id ? 'joined' : ''}" data-id="${r.id}">
+        <div class="room-top"><span class="room-name">${r.emoji} ${r.name}</span><span class="room-status">● ${foc}/${r.members.length} focusing</span></div>
+        <div class="room-blurb">${r.blurb}</div>
+        <div class="avatars">${r.members.slice(0, 5).map(m => avatar(m.name)).join('')}${n > 5 ? `<span class="avatar more">+${n - 5}</span>` : ''}</div>
+      </button>`;
+    }).join('');
+    renderRoom();
+  }
+  function renderRoom() {
+    const view = $('#roomView'), room = rooms.find(r => r.id === S.room);
+    if (!room) { view.hidden = true; return; }
+    view.hidden = false;
+    const mine = S.running ? (S.mode === 'focus' ? ['Focusing', ''] : ['On break', 'brk']) : ['Ready', 'idle'];
+    const me = `<li class="member you ${S.running && S.mode === 'focus' ? 'focusing' : ''}">${avatar('You')}<div class="m-info"><b>You</b><span></span></div><span class="badge ${mine[1]}">${mine[0]}</span></li>`;
+    view.innerHTML = `<div class="rv-head"><b>${room.emoji} ${room.name}</b><button class="chip" id="leaveBtn">Leave</button></div>
+      <ul class="members">${me}${room.members.map((m, i) => `<li class="member ${m.focusing ? 'focusing' : ''}" style="animation-delay:${i * 40}ms">${avatar(m.name)}<div class="m-info"><b>${m.name}</b><span>${m.task}</span></div><span class="badge ${m.focusing ? '' : 'brk'}">${m.focusing ? 'Focusing' : 'On break'}</span></li>`).join('')}</ul>`;
+    $('.you .m-info span', view).textContent = el.task.value.trim() || 'Setting a goal…';
+  }
+
+  /* ---------- settings / themes / focus mode ---------- */
+  function applyTheme(t) {
+    document.body.dataset.theme = t; store.settings.theme = t; save();
+  }
+  function toggleFocusMode(force) {
+    const on = force ?? !document.body.classList.contains('focus-mode');
+    document.body.classList.toggle('focus-mode', on);
+    if (on) { $('#app').scrollIntoView(); document.documentElement.requestFullscreen?.().catch(() => {}); }
+    else if (document.fullscreenElement) document.exitFullscreen?.();
+  }
+
+  /* ---------- wiring ---------- */
+  el.start.onclick = () => (S.running ? pause() : start());
+  el.reset.onclick = reset;
+  el.skip.onclick = () => { // demo helper: jump to the final seconds
+    audio(); if (!S.running) start();
+    S.endAt = performance.now() + 3000; toast('⏩ Fast-forwarded to the last 3 seconds');
+  };
+  $$('.tab').forEach(t => (t.onclick = () => setMode(t.dataset.mode)));
+  $('#chimeBtn').onclick = () => chime('done');
+  $('#volume').oninput = e => {
+    store.settings.volume = e.target.value / 100; save();
+    if (master) master.gain.setTargetAtTime(store.settings.volume, ctx.currentTime, 0.02);
+  };
+  $('#ambVolume').oninput = e => {
+    store.settings.ambient = e.target.value / 100; save();
+    if (ambBus) ambBus.gain.setTargetAtTime(store.settings.ambient, ctx.currentTime, 0.05);
+  };
+  $$('.amb-btn').forEach(b => (b.onclick = () => {
+    const k = b.dataset.kind, on = !amb[k];
+    on ? startAmbient(k) : stopAmbient(k); b.classList.toggle('on', on);
+  }));
+  $('#focusModeBtn').onclick = () => toggleFocusMode();
+  $('#exitFocus').onclick = () => toggleFocusMode(false);
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('focus-mode'); });
+  el.task.addEventListener('input', renderRoom);
+
+  $('#statsToggle').onclick = e => {
+    const open = $('#statsDrawer').classList.toggle('open');
+    e.currentTarget.setAttribute('aria-expanded', open);
+    e.currentTarget.textContent = open ? '📊 Hide stats' : "📊 Show today's stats";
+  };
+  $('#roomList').onclick = e => {
+    const r = e.target.closest('.room'); if (!r) return;
+    S.room = S.room === r.dataset.id ? null : r.dataset.id;
+    renderRooms();
+    if (S.room) toast('👋 You joined ' + rooms.find(x => x.id === S.room).name);
+  };
+  $('#roomView').onclick = e => { if (e.target.id === 'leaveBtn') { S.room = null; renderRooms(); } };
+  $$('[data-theme-set]').forEach(b => (b.onclick = () => applyTheme(b.dataset.themeSet)));
+
+  const dlg = $('#settingsDialog'), form = $('#settingsForm');
+  $('#settingsBtn').onclick = () => {
+    const s = store.settings;
+    ['focus', 'short', 'long', 'target'].forEach(k => (form.elements[k].value = s[k]));
+    form.elements.auto.checked = s.auto; dlg.showModal();
+  };
+  form.addEventListener('submit', e => {
+    if (e.submitter && e.submitter.value === 'save') {
+      const s = store.settings;
+      ['focus', 'short', 'long', 'target'].forEach(k => (s[k] = Math.max(1, +form.elements[k].value || DEFAULTS[k])));
+      s.auto = form.elements.auto.checked; save();
+      if (!S.running) { S.total = S.remaining = minutes(S.mode); render(); }
+      renderStats(); toast('Settings saved ✓');
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea, select') || dlg.open) return;
+    if (e.code === 'Space') { e.preventDefault(); S.running ? pause() : start(); }
+    else if (e.key === 'r' || e.key === 'R') reset();
+    else if (e.key === 'f' || e.key === 'F') toggleFocusMode();
+    else if (e.key === 'Escape') toggleFocusMode(false);
+  });
+
+  // scroll reveal
+  const io = new IntersectionObserver(es => es.forEach(x => { if (x.isIntersecting) { x.target.classList.add('in'); io.unobserve(x.target); } }), { threshold: 0.15 });
+  $$('.reveal').forEach(n => io.observe(n));
+
+  /* ---------- boot ---------- */
+  applyTheme(store.settings.theme);
+  $('#volume').value = store.settings.volume * 100;
+  $('#ambVolume').value = store.settings.ambient * 100;
+  setMode('focus'); renderDots(); renderStats();
+  initRooms(ROOMS_FALLBACK);
+})();
+  </script>
+</body>
+</html>
